@@ -2,7 +2,7 @@
 {
     public class PositionCodePath
     {
-        public string? PositionCode { get; set; }
-        public string? Type { get; set; }   
+        public string? positionCode { get; set; }
+        public string? type { get; set; }   
     }
 }

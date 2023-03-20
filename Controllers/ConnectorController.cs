@@ -30,8 +30,8 @@ namespace RozitekAPIConnector.Controllers
                     var paramObj = new
                     {
                         reqCode = request.ReqCode,
-                        taskType = request.TaskTyp,
-                        PositionCodePath = request.PositionCodePath,
+                        taskTyp = request.TaskTyp,
+                        positionCodePath = request.positionCodePath,
                     };
                     var dataJson = JsonConvert.SerializeObject(paramObj);
                     var payload = new StringContent(dataJson, Encoding.UTF8, "application/json");

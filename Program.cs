@@ -19,10 +19,8 @@ builder.Services.Configure<AppSettings>(appConfigSection);
 //CORS
 builder.Services.AddCors(o => o.AddPolicy("CorsPolicy", builder =>
 {
-    builder.AllowAnyMethod()
-           .AllowAnyHeader()
-           .AllowCredentials()
-    .WithOrigins("http://127.0.0.1:5500");
+    builder.WithOrigins().AllowAnyMethod().AllowAnyHeader().SetIsOriginAllowed(origin => true) // allow any origin
+   .AllowCredentials().Build();
 }));
 
 var app = builder.Build();
