@@ -22,10 +22,10 @@ namespace RozitekAPIConnector.Controllers
         {
             try
             {
-                var result = new object();
+                string result = new string("");
                 using (var client = new HttpClient())
                 {
-                    Uri endpointToken = new Uri("http://192.168.20.2:8181/rcms/services/rest/hikRpcService/genAgvSchedulingTask/");
+                    Uri endpointToken = new Uri(_appConfig.Url);
 
                     var paramObj = new
                     {
@@ -37,11 +37,23 @@ namespace RozitekAPIConnector.Controllers
                     var payload = new StringContent(dataJson, Encoding.UTF8, "application/json");
 
 
-                    var jsonresult = client.PostAsync(endpointToken, payload).Result.Content.ReadAsStringAsync().Result;
-                    result = JsonConvert.DeserializeObject<Response>(jsonresult); //This is the result from SSO
-
-
+                    result = client.PostAsync(endpointToken, payload).Result.Content.ReadAsStringAsync().Result;
                 }
+                return new JsonResult(result);
+            }
+            catch (Exception ex)
+            {
+                return new BadRequestObjectResult(ex.Message);
+            }
+        }
+
+        [HttpGet("test-deploy")]
+        public async Task<IActionResult> TestMiddleware()
+        {
+            try
+            {
+                string result = new string("");
+                result = "Deploy OK";
                 return new JsonResult(result);
             }
             catch (Exception ex)

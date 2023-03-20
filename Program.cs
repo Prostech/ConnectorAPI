@@ -1,3 +1,6 @@
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.Extensions.Configuration;
+using RozitekAPIConnector.Middleware;
 using RozitekAPIConnector.Models;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -8,8 +11,11 @@ builder.Services.AddControllers();
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-var appConfigSection = builder.Configuration.GetSection("AppSettings");
+var appConfigSection = builder.Configuration.GetSection("Logging:AppSettings");
 builder.Services.Configure<AppSettings>(appConfigSection);
+//CORS
+builder.Services.AddCors();
+
 
 var app = builder.Build();
 
@@ -19,6 +25,15 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+app.UseMiddleware<Middleware>();
+
+app.UseCors(builder =>
+{
+    builder
+    .AllowAnyOrigin()
+    .AllowAnyMethod()
+    .AllowAnyHeader();
+});
 
 app.UseHttpsRedirection();
 
