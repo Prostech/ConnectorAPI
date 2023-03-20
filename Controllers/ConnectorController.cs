@@ -18,7 +18,7 @@ namespace RozitekAPIConnector.Controllers
             _appConfig = appConfig.Value;
         }
         [HttpPost]
-        public async Task<IActionResult> Middleware([FromHeader] string token,[FromBody] Request request)
+        public async Task<IActionResult> Middleware([FromBody] Request request)
         {
             try
             {
@@ -48,7 +48,7 @@ namespace RozitekAPIConnector.Controllers
         }
 
         [HttpGet("test-deploy")]
-        public async Task<IActionResult> TestMiddleware([FromHeader] string token)
+        public async Task<IActionResult> TestMiddleware()
         {
             try
             {

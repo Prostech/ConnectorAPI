@@ -4,6 +4,6 @@
     {
         public string? ReqCode { get; set; }
         public string? TaskTyp { get; set; }
-        public PositionCodePath[] PositionCodePath { get; set; }
+        public PositionCodePath[]? PositionCodePath { get; set; }
     }
 }
