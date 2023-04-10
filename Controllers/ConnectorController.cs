@@ -17,21 +17,21 @@ namespace RozitekAPIConnector.Controllers
         {
             _appConfig = appConfig.Value;
         }
-        [HttpPost]
-        public async Task<IActionResult> Middleware([FromBody] Request request)
+        [HttpPost("queryPodBerthAndMat")]
+        public async Task<IActionResult> QueryPodBerthAndMat([FromBody] QueryPodBerthAndMat request)
         {
             try
             {
                 string result = new string("");
                 using (var client = new HttpClient())
                 {
-                    Uri endpointToken = new Uri(_appConfig.Url);
+                    Uri endpointToken = new Uri(_appConfig.Url+ "rcms/services/rest/hikRpcService/queryPodBerthAndMat");
 
                     var paramObj = new
                     {
                         reqCode = request.ReqCode,
-                        taskTyp = request.TaskTyp,
-                        positionCodePath = request.positionCodePath,
+                        areaCode = request.AreaCode,
+                        positionCode = request.PositionCode,
                     };
                     var dataJson = JsonConvert.SerializeObject(paramObj);
                     var payload = new StringContent(dataJson, Encoding.UTF8, "application/json");
@@ -53,7 +53,7 @@ namespace RozitekAPIConnector.Controllers
             try
             {
                 string result = new string("");
-                result = "Deploy OK";
+                result = "Deploy Ngon";
                 return new JsonResult(result);
             }
             catch (Exception ex)
