@@ -82,3 +82,5 @@ Cách 2: Ta sẽ tự build Docker image dựa trên code.
 	- Bước 4: Cho docker container tự khởi động mỗi khi onboot, ta dùng câu lệnh: "docker update --restart=always <container-id>". Nếu ta muốn stop không cho container này tự động khởi động nữa thì dùng câu lệnh: "docker update --restart=no <container-id>".
 
 ------------------------Done---------------------------------
+p/s:
+Với đống câu lệnh phía trên để chạy được 1 docker cũng khá là nhiều nên và trong trường hợp cần phải chạy nhiều dockerfile thì đó đúng là thảm hoạ, nên người ta sẽ dùng docker-compose để có thể auto chạy từng dockerfile một cách tự động. Ngoài ra, ta có thể chạy được nhiều docker image trên nhiều port khác nhau. Do đó để có thể quản lý các container khi có nhiều container trên máy người ta sẽ dùng kubernetes. Ta sẽ tìm hiểu về docker-compose và kubernetes vào lần sau
