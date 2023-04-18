@@ -1,0 +1,84 @@
+1. Khởi động Docker nếu Docker chưa khởi động
+
+	sudo systemctl start docker
+
+2. Chạy server trên Server để Docker luôn tự động start mỗi khi Server onboot, tránh trường hợp restart Server dẫn đến Docker tắt luôn.
+
+	sudo systemctl enable docker.service
+
+3. Tạo Docker image. Có 2 cách để có Docker image trên Server:
+Cách 1: 
+	- Bước 1: Ta sẽ pull Docker Image trên Docker HUB về bằng câu lệnh sau: docker pull <tên-account>/<tên-repository>:<tag-version>
+		 Ví dụ:
+	
+			docker pull recca5prozitek/rozitek:v1.0.11
+
+		Chú thích:
+			tên-account: recca5prozitek
+			tên-repository: rozitek
+			tag-version: v1.0.11
+
+		Ở cách này, docker được build được Dev build image ra từ code của họ và họ push image lên Docker Hub, và ta chỉ cần pull về đúng version mà họ cung cấp.
+		Ta có thể xem Docker Hub giống như GoogleDrive hoặc OneDrive vậy, image được Dev push lên Docker Hub và share bằng câu lệnh "docker pull <tên-account>/<tên-repository>:<tag-version>" cho ai cần dùng (tất nhiên là cũng phải cần họ grant access mới down về được).
+	- Bước 2: Chạy câu lệnh "docker image ls" để kiểm tra xem docker image đã có trên máy chưa. Kết quả ví dụ:
+
+		[root@HikvisionOS ~]# docker image ls
+		REPOSITORY                        TAG       IMAGE ID       CREATED              SIZE
+		recca5prozitek/rozitek            v1.0.11   5858bc817148   About a minute ago   220MB
+
+	
+Cách 2: Ta sẽ tự build Docker image dựa trên code.
+	- Bước 1: Tải code về. Có thể thông qua Git hoặc thông file nén phổ biến như .zip, .tar
+	- Bước 2: Giải nén code
+	- Bước 3: cd vào directory có chứa "dockerfile"
+	- Bước 4: Build image bằng câu lệnh: docker build -t <tên-image>:<tag-version> .
+		Ví dụ:
+			
+			docker build -t recca5prozitek/rozitek:v1.0.11 .
+
+		Chú thích:
+			tên-image: recca5prozitek/rozitek ( tên image này được tạo ra bằng cú pháp "<tên-account>/<tên-repository>" )
+			tag-version: v1.0.11
+		*Lưu ý: nhớ ghi dấu . ở cuối câu lệnh vô, đó không phải dấu chấm cuối câu đâu.
+	- Bước 5: Chạy câu lệnh "docker image ls" để kiểm tra xem docker image đã có trên máy chưa. Kết quả ví dụ:
+
+		[root@HikvisionOS ~]# docker image ls
+		REPOSITORY                        TAG       IMAGE ID       CREATED              SIZE
+		recca5prozitek/rozitek            v1.0.11   5858bc817148   About a minute ago   220MB
+
+4. Sau khi đã có Docker image, ta đã có thể bắt đầu chạy Docker image đó trên server. Tuy nhiên, ta nên stop cái docker container đang chạy. Để có thể stop ta sẽ bắt đầu như sau:
+	- Bước 1: Chạy câu lệnh "docker container ls" để xem có container nào đang chạy không. Nếu không có thì ta có thể đi bắt đầu chạy image, nếu có, ta cần phải stop nó. Nếu có container, result sẽ là:
+		
+		[root@HikvisionOS ~]# docker container ls
+		CONTAINER ID   IMAGE          COMMAND                  CREATED        STATUS         PORTS                                            NAMES
+		ec6f37c5712e   46f09a354cbd   "dotnet RozitekAPICo…"   27 hours ago   Up 2 minutes   443/tcp, 0.0.0.0:3000->80/tcp, :::3000->80/tcp   strange_villani
+
+	- Bước 2: Ta có thể thấy có container là ec6f37c5712e đang chạy, ta cần stop nó bằng câu lệnh: "docker stop <container-id>", ví dụ: "docker stop ec6f37c5712e". Sau đó ta chạy lại lệnh ở bước 1 "docker container ls", ta sẽ thấy không cần container nào nữa cả:
+
+		[root@HikvisionOS ~]# docker stop ec6f37c5712e
+		ec6f37c5712e
+		[root@HikvisionOS ~]# docker container ls
+		CONTAINER ID   IMAGE     COMMAND   CREATED   STATUS    PORTS     NAMES
+5. Chạy docker image
+	- Bước 1: Để chạy được image ta cần biết <image-id>, ta lại dùng câu lệnh "docker image ls" để lấy docker image-id:
+
+		[root@HikvisionOS ~]# docker image ls
+		REPOSITORY               TAG       IMAGE ID       CREATED             SIZE
+		recca5prozitek/rozitek   v1.0.11   5858bc817148   About an hour ago   220MB
+	- Bước 2: Ta có thể thấy docker image-id ở đây là 5858bc817148. Vậy ta sẽ chạy docker image bằng câu lệnh sau: "docker run -dp <port>:80 <image-id>". Ví dụ
+
+		docker run -dp 3000:80 5858bc817148
+
+		Chú thích:
+			<port>: 3000
+			<image-id>: 5858bc817148
+	- Bước 3: Kiểm tra lại docker image đó đã chạy chưa. Ta lại dùng câu lệnh "docker container ls" để xem, ví dụ:
+
+		[root@HikvisionOS ~]# docker container ls
+		CONTAINER ID   IMAGE          COMMAND                  CREATED         STATUS         PORTS                                            NAMES
+		03c2e249893c   5858bc817148   "dotnet RozitekAPICo…"   3 minutes ago   Up 3 minutes   443/tcp, 0.0.0.0:3000->80/tcp, :::3000->80/tcp   dazzling_chandrasekhar
+
+	Ta thấy được image 5858bc817148 của ta đang chạy ở container id là: 03c2e249893c.
+	- Bước 4: Cho docker container tự khởi động mỗi khi onboot, ta dùng câu lệnh: "docker update --restart=always <container-id>". Nếu ta muốn stop không cho container này tự động khởi động nữa thì dùng câu lệnh: "docker update --restart=no <container-id>".
+
+------------------------Done---------------------------------
