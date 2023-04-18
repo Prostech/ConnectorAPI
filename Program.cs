@@ -41,7 +41,7 @@ if (app.Environment.IsDevelopment())
 app.UseSwagger();
 app.UseSwaggerUI();
 
-app.UseMiddleware<Middleware>();
+//app.UseMiddleware<Middleware>();
 
 app.UseCors("CorsPolicy");
 

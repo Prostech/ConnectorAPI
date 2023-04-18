@@ -54,7 +54,7 @@ namespace RozitekAPIConnector.Controllers
 
 
         [HttpGet("task-order")]
-        public async Task<IActionResult> QueryTaskOrder([FromQuery] PaginatorModel page, [FromHeader] string token)
+        public async Task<IActionResult> QueryTaskOrderAsync([FromQuery] PaginatorModel page)
         {
             try
             {
@@ -89,14 +89,52 @@ namespace RozitekAPIConnector.Controllers
             }
         }
 
+        [HttpGet("count-task-by-status")]
+        public async Task<IActionResult> CountTaskByStatusAsync([FromQuery] string TaskStatus, [FromQuery] string TaskTyp, [FromQuery] string[] WbCodes)
+        {
+            try
+            {
+                string query = @"select * from count_tcs_task_by_status(@p_task_status, @p_task_typ, @p_wb_codes)"; // SQL query to call stored function
+
+                DataTable table = new DataTable(); // DataTable to hold query result
+
+                string sqlDataSource = _appConfig.DbConnection; // Connection string for database
+                NpgsqlDataReader myReader; // Data reader to read query result
+
+                using (NpgsqlConnection myCon = new NpgsqlConnection(sqlDataSource)) // Create and open database connection
+                {
+                    myCon.Open();
+
+                    using (NpgsqlCommand myCommand = new NpgsqlCommand(query, myCon)) // Create and execute database command
+                    {
+                        myCommand.Parameters.AddWithValue("@p_task_status", TaskStatus); // Add parameter for task status
+                        myCommand.Parameters.AddWithValue("@p_task_typ", TaskTyp); // Add parameter for task type
+                        myCommand.Parameters.AddWithValue("@p_wb_codes", WbCodes); // Add parameter for wb codes
+
+                        myReader = myCommand.ExecuteReader(); // Execute query and read result into data reader
+                        table.Load(myReader); // Load data reader into data table
+
+                        myReader.Close(); // Close data reader
+                        myCon.Close(); // Close database connection
+                    }
+                }
+
+                return new JsonResult(table); // Return data table as JSON result
+            }
+            catch (Exception ex)
+            {
+                return new BadRequestObjectResult(ex.Message); // Return error message as BadRequest response
+            }
+        }
+
 
         [HttpGet("test-deploy")]
-        public async Task<IActionResult> TestMiddleware([FromHeader] string token)
+        public async Task<IActionResult> TestMiddleware()
         {
             try
             {
                 string result = new string("");
-                result = "Deploy v1.2";
+                result = "Deploy v1.3";
                 return new JsonResult(result);
             }
             catch (Exception ex)
