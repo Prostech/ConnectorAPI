@@ -26,7 +26,7 @@ namespace RozitekAPIConnector.Controllers
         }
 
         [HttpPost("return-pod-factory-2-1")]
-        public async Task<IActionResult> ReturnPodFactory2to1Async([FromBody] ReturnPodFactory2to1AsyncRequest req)
+        public async Task<IActionResult> ReturnPodFactory2to1Async([FromBody] ReturnPodFactory2to1Request req)
         {
             try
             {
@@ -96,51 +96,49 @@ namespace RozitekAPIConnector.Controllers
             }
         }
 
-        //[HttpPost("return-mat-factory-1-2")]
-        //public async Task<IActionResult> ReturnMatFactory1to2([FromBody] ReturnPodFactory2to1AsyncRequest req)
-        //{
-        //    try
-        //    {
-        //        //getOutPod count
-        //        var countRes = await CountTaskByStatusAsync(req.countTaskRequest.TaskStatus, req.countTaskRequest.TaskTyp, req.countTaskRequest.WbCodes);
-        //        if (countRes > 0)
-        //        {
-        //            ReturnMessage returnPodCmdRes = await returnPod(req.MaterialLot, req.PodCode, req.BinCode, req.ReturnPodStrategy);
-        //            if (!returnPodCmdRes.Code.Equals("0", StringComparison.OrdinalIgnoreCase))
-        //                return new BadRequestObjectResult(new
-        //                {
-        //                    Id = -1,
-        //                    Message = "Return Pod failed",
-        //                    ErrorMessage = returnPodCmdRes.Message,
-        //                });
-        //        }
-        //        else
-        //        {
-        //            ReturnMessage getOutPodCmdRes = await getOutPod(req.MaterialLot, req.PodCode, req.BinCode, req.ReturnPodStrategy);
-        //            if (!getOutPodCmdRes.Code.Equals("0", StringComparison.OrdinalIgnoreCase))
-        //                return new BadRequestObjectResult(new
-        //                {
-        //                    Id = -1,
-        //                    Message = "getOutPod failed",
-        //                    ErrorMessage = getOutPodCmdRes.Message,
-        //                });
-        //        }
+        [HttpPost("return-mat-factory-1-2")]
+        public async Task<IActionResult> ReturnMatFactory1to2([FromBody] ReturnMatFactory1to2Request req)
+        {
+            try
+            {
+                if (req.IsReceive.Equals("Yes", StringComparison.OrdinalIgnoreCase))
+                {
+                    ReturnMessage returnPodCmdRes = await returnPod(req.BinCode, req.BinCode.Substring(0, 6), req.BinCode, req.ReturnPodStrategy, "", req.TaskTyp);
+                    if (!returnPodCmdRes.Code.Equals("0", StringComparison.OrdinalIgnoreCase))
+                        return new BadRequestObjectResult(new
+                        {
+                            Id = -1,
+                            Message = "Return Pod failed",
+                            ErrorMessage = returnPodCmdRes.Message,
+                        });
+                }
+                else
+                {
+                    ReturnMessage getOutPodCmdRes = await getOutPod(req.BinCode, req.BinCode.Substring(0, 6), req.BinCode, req.ReturnPodStrategy, "", req.TaskTyp);
+                    if (!getOutPodCmdRes.Code.Equals("0", StringComparison.OrdinalIgnoreCase))
+                        return new BadRequestObjectResult(new
+                        {
+                            Id = -1,
+                            Message = "getOutPod failed",
+                            ErrorMessage = getOutPodCmdRes.Message,
+                        });
+                }
 
-        //        return new JsonResult(new
-        //        {
-        //            Id = 1,
-        //            Message = "Success"
-        //        });
-        //    }
-        //    catch (Exception ex)
-        //    {
-        //        return new BadRequestObjectResult(new
-        //        {
-        //            Id = -1,
-        //            Message = ex.Message
-        //        });
-        //    }
-        //}
+                return new JsonResult(new
+                {
+                    Id = 1,
+                    Message = "Success"
+                });
+            }
+            catch (Exception ex)
+            {
+                return new BadRequestObjectResult(new
+                {
+                    Id = -1,
+                    Message = ex.Message
+                });
+            }
+        }
 
         private async Task<List<TCSPodResult>> QueryPodCodeAndMatAsync (string Suffix)
         {
