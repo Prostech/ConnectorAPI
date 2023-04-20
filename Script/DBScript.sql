@@ -37,7 +37,7 @@ END;
 $$
 LANGUAGE plpgsql; -- Specify PL/pgSQL as the procedural language for the function
 
--- Create a function to get task data with pagination
+-- Create a function --
 CREATE OR REPLACE FUNCTION count_tcs_task_by_status(
     p_task_status varchar, 
     p_task_typ varchar, 
@@ -61,4 +61,26 @@ END;
 $$
 LANGUAGE plpgsql;
 
-SELECT * FROM count_tcs_task_by_status('5', 'M10', ARRAY['098636AB042713', '100036AB042713']);
+-- Create a function --
+CREATE OR REPLACE FUNCTION get_tcs_pod(
+    p_task_status varchar, 
+    p_task_typ varchar, 
+    p_wb_codes varchar[]
+)
+RETURNS TABLE ("Quantity" int) AS
+$$
+DECLARE
+    count_result int; -- Declare a variable to hold the result of the count query
+BEGIN
+    -- Execute a count query to count the rows that match the input criteria
+    SELECT count(*) INTO count_result
+    FROM tcs_trans_task
+    WHERE task_status = p_task_status
+        AND task_typ = p_task_typ
+        AND wb_code = ANY(p_wb_codes);
+    
+    -- Return the count result as a single-row table
+    RETURN QUERY SELECT count_result;
+END;
+$$
+LANGUAGE plpgsql;
