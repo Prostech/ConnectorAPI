@@ -33,26 +33,21 @@ namespace RozitekAPIConnector.Controllers
                 //Get PodCode And Mat
                 TCSPodResult getPodAndMatRes = await QueryPodCodeAndMatAsync(req.Position);
 
-                if (getPodAndMatRes.PodCode == null)
+                
+                if (getPodAndMatRes.CaseNum != null && getPodAndMatRes.CaseNum != "")
                 {
-                    return new BadRequestObjectResult(new
-                    {
-                        Id = -1,
-                        Message = "Cannot find any Mat And Pod",
-                        ErrorMessage = "",
-                    });
+                    //Unbind Mat and Pod
+                    ReturnMessage unBindCmdRes = await UnBindPodAndMat(getPodAndMatRes.CaseNum, getPodAndMatRes.PodCode);
+
+                    if (!unBindCmdRes.Code.Equals("0", StringComparison.OrdinalIgnoreCase))
+                        return new BadRequestObjectResult(new
+                        {
+                            Id = -1,
+                            Message = "Unbind failed",
+                            ErrorMessage = unBindCmdRes.Message,
+                        });
                 }
 
-                //Unbind Mat and Pod
-                ReturnMessage unBindCmdRes = await UnBindPodAndMat(getPodAndMatRes.CaseNum, getPodAndMatRes.PodCode);
-
-                if (!unBindCmdRes.Code.Equals("0", StringComparison.OrdinalIgnoreCase))
-                    return new BadRequestObjectResult(new
-                    {
-                        Id = -1,
-                        Message = "Unbind failed",
-                        ErrorMessage = unBindCmdRes.Message,
-                    });
                 string binCode = getPodAndMatRes.PodCode + _appConfig.BinCodeSuffix;
 
                 //getOutPod count
@@ -70,13 +65,10 @@ namespace RozitekAPIConnector.Controllers
                 }
                 else
                 {
-                    ReturnMessage getOutPodCmdRes = await getOutPod(getPodAndMatRes.CaseNum, getPodAndMatRes.PodCode, binCode, req.ReturnPodStrategy, req.Position, req.TaskTyp);
-                    if (!getOutPodCmdRes.Code.Equals("0", StringComparison.OrdinalIgnoreCase))
-                        return new BadRequestObjectResult(new
+                    return new JsonResult(new
                         {
-                            Id = -1,
-                            Message = "getOutPod failed",
-                            ErrorMessage = getOutPodCmdRes.Message,
+                            Id = 1,
+                            Message = "There is not getOutPod API executing",
                         });
                 }
 
@@ -101,33 +93,37 @@ namespace RozitekAPIConnector.Controllers
         {
             try
             {
-                if (req.IsReceive.Equals("Yes", StringComparison.OrdinalIgnoreCase))
+                PodAndPositionResult findPodRes = new PodAndPositionResult();
+                findPodRes = await FindPodAtPosition(req.Position);
+                if (findPodRes.PodCode == null || findPodRes.PodCode == "") 
                 {
-                    ReturnMessage returnPodCmdRes = await returnPod(req.BinCode, req.BinCode.Substring(0, 6), req.BinCode, req.ReturnPodStrategy, "", req.TaskTyp);
-                    if (!returnPodCmdRes.Code.Equals("0", StringComparison.OrdinalIgnoreCase))
-                        return new BadRequestObjectResult(new
-                        {
-                            Id = -1,
-                            Message = "Return Pod failed",
-                            ErrorMessage = returnPodCmdRes.Message,
-                        });
-                }
-                else
-                {
-                    ReturnMessage getOutPodCmdRes = await getOutPod(req.BinCode, req.BinCode.Substring(0, 6), req.BinCode, req.ReturnPodStrategy, "", req.TaskTyp);
-                    if (!getOutPodCmdRes.Code.Equals("0", StringComparison.OrdinalIgnoreCase))
+                    string podCode = new string("");
+                    podCode = await FindFreePodByArea(req.Area);
+
+                    //getOutPod
+                    ReturnMessage getOutPodRes = new ReturnMessage();
+                    getOutPodRes = await getOutPod("", podCode, podCode + "56501013", "", req.Position, req.TaskTyp);
+                    if (!getOutPodRes.Code.Equals("0", StringComparison.OrdinalIgnoreCase))
                         return new BadRequestObjectResult(new
                         {
                             Id = -1,
                             Message = "getOutPod failed",
-                            ErrorMessage = getOutPodCmdRes.Message,
+                            ErrorMessage = getOutPodRes.Message,
                         });
+                }
+                else
+                {
+                    return new JsonResult(new
+                    {
+                        Id = 1,
+                        Message = "There is Pod " +findPodRes.PodCode+" at "+findPodRes.Place,
+                    });
                 }
 
                 return new JsonResult(new
                 {
                     Id = 1,
-                    Message = "Success"
+                    Message = "Success",
                 });
             }
             catch (Exception ex)
@@ -140,11 +136,11 @@ namespace RozitekAPIConnector.Controllers
             }
         }
 
-        private async Task<TCSPodResult> QueryPodCodeAndMatAsync (string Suffix)
+        private async Task<PodAndPositionResult> FindPodAtPosition(string Position)
         {
             try
             {
-                string query = @"select * from get_tcs_pod(@p_suffix)";
+                string query = @"select * from find_pod_by_position(@p_position)";
 
                 DataTable table = new DataTable();
                 string sqlDataSource = _appConfig.DbConnection;
@@ -154,7 +150,94 @@ namespace RozitekAPIConnector.Controllers
                     myCon.Open();
                     using (NpgsqlCommand myCommand = new NpgsqlCommand(query, myCon))
                     {
-                        myCommand.Parameters.AddWithValue("@p_suffix", Suffix);
+                        myCommand.Parameters.AddWithValue("@p_position", Position);
+
+                        myReader = myCommand.ExecuteReader();
+                        table.Load(myReader);
+
+                        myReader.Close();
+                        myCon.Close();
+
+                    }
+                }
+
+                // Convert DataTable to List<TCSPodResult>
+                PodAndPositionResult result = new PodAndPositionResult();
+                foreach (DataRow row in table.Rows)
+                {
+                    PodAndPositionResult pod = new PodAndPositionResult();
+                    pod.PodCode = row["PodCode"].ToString();
+                    pod.Place = row["Place"].ToString();
+                    result.PodCode = pod.PodCode;
+                    result.Place = pod.Place;
+                }
+
+                return result;
+            }
+            catch (Exception e)
+            {
+                throw;
+            }
+        }
+
+        private async Task<string> FindFreePodByArea(string area)
+        {
+            try
+            {
+                string query = @"select * from find_free_pod_by_area(@p_area)";
+
+                DataTable table = new DataTable();
+                string sqlDataSource = _appConfig.DbConnection;
+                NpgsqlDataReader myReader;
+                using (NpgsqlConnection myCon = new NpgsqlConnection(sqlDataSource))
+                {
+                    myCon.Open();
+                    using (NpgsqlCommand myCommand = new NpgsqlCommand(query, myCon))
+                    {
+                        myCommand.Parameters.AddWithValue("@p_area", area);
+
+                        myReader = myCommand.ExecuteReader();
+                        table.Load(myReader);
+
+                        myReader.Close();
+                        myCon.Close();
+
+                    }
+                }
+
+                // Convert DataTable to List<TCSPodResult>
+                string result = new string("");
+                foreach (DataRow row in table.Rows)
+                {
+                    string pod = new string("string");
+                    pod = row["PodCode"].ToString();
+                    result = pod;
+                }
+
+                return result;
+            }
+            catch (Exception e)
+            {
+                throw;
+            }
+        }
+
+        private async Task<TCSPodResult> QueryPodCodeAndMatAsync (string Position)
+        {
+            try
+            {
+                string query = @"select * from get_tcs_pod(@p_position, @p_task_status)";
+
+                DataTable table = new DataTable();
+                string sqlDataSource = _appConfig.DbConnection;
+                NpgsqlDataReader myReader;
+                using (NpgsqlConnection myCon = new NpgsqlConnection(sqlDataSource))
+                {
+                    myCon.Open();
+                    using (NpgsqlCommand myCommand = new NpgsqlCommand(query, myCon))
+                    {
+                        myCommand.Parameters.AddWithValue("@p_position", Position);
+                        myCommand.Parameters.AddWithValue("@p_task_status", "9");
 
                         myReader = myCommand.ExecuteReader();
                         table.Load(myReader);
@@ -199,7 +282,7 @@ namespace RozitekAPIConnector.Controllers
                         reqCode = GenerateRandomString(32), // Request code
                         podCode = Pod, // Area code
                         materialLot = Mat, // Position code
-                        indBind = 0
+                        indBind = "0"
                     };
 
                     var dataJson = JsonConvert.SerializeObject(paramObj); // Serialize request parameters to JSON
@@ -266,13 +349,14 @@ namespace RozitekAPIConnector.Controllers
                     {
                         reqCode = GenerateRandomString(16), // Request code
                         taskTyp = TaskTyp,
-                        data = new
+                        data = new[]
+                        { new
                         {
                             taskCode = GenerateRandomString(16),
                             binCode = Bin,
                             wbCode = Position,
                             podCode = Pod,
-                        }
+                        } }
                     };
                     var dataJson = JsonConvert.SerializeObject(paramObj); // Serialize request parameters to JSON
                     var payload = new StringContent(dataJson, Encoding.UTF8, "application/json"); // Create a StringContent object with serialized JSON as payload
