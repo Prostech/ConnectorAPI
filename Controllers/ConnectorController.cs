@@ -31,9 +31,9 @@ namespace RozitekAPIConnector.Controllers
             try
             {
                 //Get PodCode And Mat
-                List<TCSPodResult> getPodAndMatRes = await QueryPodCodeAndMatAsync(req.Suffix);
+                TCSPodResult getPodAndMatRes = await QueryPodCodeAndMatAsync(req.Position);
 
-                if (getPodAndMatRes == null || getPodAndMatRes.Count == 0)
+                if (getPodAndMatRes.PodCode == null)
                 {
                     return new BadRequestObjectResult(new
                     {
@@ -44,7 +44,7 @@ namespace RozitekAPIConnector.Controllers
                 }
 
                 //Unbind Mat and Pod
-                ReturnMessage unBindCmdRes = await UnBindPodAndMat(getPodAndMatRes[0].CaseNum, getPodAndMatRes[0].PodCode);
+                ReturnMessage unBindCmdRes = await UnBindPodAndMat(getPodAndMatRes.CaseNum, getPodAndMatRes.PodCode);
 
                 if (!unBindCmdRes.Code.Equals("0", StringComparison.OrdinalIgnoreCase))
                     return new BadRequestObjectResult(new
@@ -53,13 +53,13 @@ namespace RozitekAPIConnector.Controllers
                         Message = "Unbind failed",
                         ErrorMessage = unBindCmdRes.Message,
                     });
-                string binCode = getPodAndMatRes[0].PodCode + req.Suffix;
+                string binCode = getPodAndMatRes.PodCode + _appConfig.BinCodeSuffix;
 
                 //getOutPod count
                 var countRes = await CountTaskByStatusAsync(req.countTaskRequest.TaskStatus, req.countTaskRequest.TaskTyp, req.countTaskRequest.WbCodes);
                 if (countRes > 0)
                 {
-                    ReturnMessage returnPodCmdRes = await returnPod(getPodAndMatRes[0].CaseNum, getPodAndMatRes[0].PodCode, binCode, req.ReturnPodStrategy, req.Position, req.TaskTyp);
+                    ReturnMessage returnPodCmdRes = await returnPod(getPodAndMatRes.CaseNum, getPodAndMatRes.PodCode, binCode, req.ReturnPodStrategy, req.Position, req.TaskTyp);
                     if (!returnPodCmdRes.Code.Equals("0", StringComparison.OrdinalIgnoreCase))
                         return new BadRequestObjectResult(new
                         {
@@ -70,7 +70,7 @@ namespace RozitekAPIConnector.Controllers
                 }
                 else
                 {
-                    ReturnMessage getOutPodCmdRes = await getOutPod(getPodAndMatRes[0].CaseNum, getPodAndMatRes[0].PodCode, binCode, req.ReturnPodStrategy, req.Position, req.TaskTyp);
+                    ReturnMessage getOutPodCmdRes = await getOutPod(getPodAndMatRes.CaseNum, getPodAndMatRes.PodCode, binCode, req.ReturnPodStrategy, req.Position, req.TaskTyp);
                     if (!getOutPodCmdRes.Code.Equals("0", StringComparison.OrdinalIgnoreCase))
                         return new BadRequestObjectResult(new
                         {
@@ -140,7 +140,7 @@ namespace RozitekAPIConnector.Controllers
             }
         }
 
-        private async Task<List<TCSPodResult>> QueryPodCodeAndMatAsync (string Suffix)
+        private async Task<TCSPodResult> QueryPodCodeAndMatAsync (string Suffix)
         {
             try
             {
@@ -166,13 +166,14 @@ namespace RozitekAPIConnector.Controllers
                 }
 
                 // Convert DataTable to List<TCSPodResult>
-                List<TCSPodResult> result = new List<TCSPodResult>();
+                TCSPodResult result = new TCSPodResult();
                 foreach (DataRow row in table.Rows)
                 {
                     TCSPodResult pod = new TCSPodResult();
                     pod.PodCode = row["PodCode"].ToString();
                     pod.CaseNum = row["CaseNum"].ToString();
-                    result.Add(pod);
+                    result.PodCode = pod.PodCode;
+                    result.CaseNum = pod.CaseNum;
                 }
 
                 return result;
@@ -263,12 +264,15 @@ namespace RozitekAPIConnector.Controllers
 
                     var paramObj = new // Create an anonymous object to hold request parameters
                     {
-                        reqCode = GenerateRandomString(32), // Request code
-                        binCode = Bin, // Area code
-                        podCode = Pod, // Position code
-                        wbCode = Position,
+                        reqCode = GenerateRandomString(16), // Request code
                         taskTyp = TaskTyp,
-                        taskCode = GenerateRandomString(32),
+                        data = new
+                        {
+                            taskCode = GenerateRandomString(16),
+                            binCode = Bin,
+                            wbCode = Position,
+                            podCode = Pod,
+                        }
                     };
                     var dataJson = JsonConvert.SerializeObject(paramObj); // Serialize request parameters to JSON
                     var payload = new StringContent(dataJson, Encoding.UTF8, "application/json"); // Create a StringContent object with serialized JSON as payload

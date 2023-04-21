@@ -62,25 +62,15 @@ $$
 LANGUAGE plpgsql;
 
 -- Create a function --
-CREATE OR REPLACE FUNCTION get_tcs_pod(
-    p_task_status varchar, 
-    p_task_typ varchar, 
-    p_wb_codes varchar[]
-)
-RETURNS TABLE ("Quantity" int) AS
-$$
-DECLARE
-    count_result int; -- Declare a variable to hold the result of the count query
+CREATE OR REPLACE FUNCTION public.get_tcs_pod(p_position character varying)
+ RETURNS TABLE(podcode character varying, casenum character varying)
+ LANGUAGE plpgsql
+AS $function$
 BEGIN
-    -- Execute a count query to count the rows that match the input criteria
-    SELECT count(*) INTO count_result
-    FROM tcs_trans_task
-    WHERE task_status = p_task_status
-        AND task_typ = p_task_typ
-        AND wb_code = ANY(p_wb_codes);
-    
-    -- Return the count result as a single-row table
-    RETURN QUERY SELECT count_result;
+    RETURN QUERY SELECT tp.pod_code, tp.case_num 
+    FROM tcs_pod tp
+    WHERE tp.berth_code = p_position AND tp.case_num IS NOT NULL AND tp.case_num <> ''
+    limit 1;
 END;
-$$
-LANGUAGE plpgsql;
+$function$
+;
