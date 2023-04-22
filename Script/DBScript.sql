@@ -70,10 +70,10 @@ CREATE OR REPLACE FUNCTION public.get_tcs_pod(p_position character varying, p_ta
 AS $function$
 BEGIN
     RETURN QUERY SELECT tp.pod_code, tp.case_num 
-    FROM tcs_pod tp
-    left join tcs_trans_task ttt 
-    on ttt.pod_code = tp.pod_code 
-    WHERE tp.src_berth_code  = p_position and ttt.task_status = p_task_status
+    FROM tcs_map_data tmd
+    left join tcs_pod tp 
+    on tmd.pod_code = tp.pod_code 
+    WHERE tp.src_berth_code  = p_position and tp.case_num IS not NULL OR tp.case_num<> '' and ttt.task_status = p_task_status
     limit 1;
 END;
 $function$

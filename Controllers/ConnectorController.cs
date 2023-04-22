@@ -31,7 +31,7 @@ namespace RozitekAPIConnector.Controllers
             try
             {
                 //Get PodCode And Mat
-                TCSPodResult getPodAndMatRes = await QueryPodCodeAndMatAsync(req.Position);
+                PodAndPositionResult getPodAndMatRes = await FindPodAtPosition(req.Position);
 
                 
                 if (getPodAndMatRes.CaseNum != null && getPodAndMatRes.CaseNum != "")
@@ -54,7 +54,7 @@ namespace RozitekAPIConnector.Controllers
                 var countRes = await CountTaskByStatusAsync(req.countTaskRequest.TaskStatus, req.countTaskRequest.TaskTyp, req.countTaskRequest.WbCodes);
                 if (countRes > 0)
                 {
-                    ReturnMessage returnPodCmdRes = await returnPod(getPodAndMatRes.CaseNum, getPodAndMatRes.PodCode, binCode, req.ReturnPodStrategy, req.Position, req.TaskTyp);
+                    ReturnMessage returnPodCmdRes = await returnPod(getPodAndMatRes.PodCode, binCode, req.Position);
                     if (!returnPodCmdRes.Code.Equals("0", StringComparison.OrdinalIgnoreCase))
                         return new BadRequestObjectResult(new
                         {
@@ -65,11 +65,24 @@ namespace RozitekAPIConnector.Controllers
                 }
                 else
                 {
-                    return new JsonResult(new
+                    ReturnMessage returnPodCmdRes = await returnPod(getPodAndMatRes.PodCode, binCode, req.Position);
+                    if (!returnPodCmdRes.Code.Equals("0", StringComparison.OrdinalIgnoreCase))
+                        return new BadRequestObjectResult(new
                         {
-                            Id = 1,
-                            Message = "There is not getOutPod API executing",
+                            Id = -1,
+                            Message = "returnPod failed",
+                            ErrorMessage = returnPodCmdRes.Message,
                         });
+
+                    ReturnMessage getOutPodCmdRes = await getOutPod(getPodAndMatRes.PodCode, binCode, req.Position);
+                    if (!getOutPodCmdRes.Code.Equals("0", StringComparison.OrdinalIgnoreCase))
+                        return new BadRequestObjectResult(new
+                        {
+                            Id = -1,
+                            Message = "getOutPod failed",
+                            ErrorMessage = getOutPodCmdRes.Message,
+                        });
+
                 }
 
                 return new JsonResult(new
@@ -98,11 +111,11 @@ namespace RozitekAPIConnector.Controllers
                 if (findPodRes.PodCode == null || findPodRes.PodCode == "") 
                 {
                     string podCode = new string("");
-                    podCode = await FindFreePodByArea(req.Area);
-
+                    podCode = await FindFreePodByArea(_appConfig.GetOutPodParams.Area);
+                    string binCode = podCode + _appConfig.BinCodeSuffix;
                     //getOutPod
                     ReturnMessage getOutPodRes = new ReturnMessage();
-                    getOutPodRes = await getOutPod("", podCode, podCode + "56501013", "", req.Position, req.TaskTyp);
+                    getOutPodRes = await getOutPod(podCode, binCode, req.Position);
                     if (!getOutPodRes.Code.Equals("0", StringComparison.OrdinalIgnoreCase))
                         return new BadRequestObjectResult(new
                         {
@@ -140,7 +153,12 @@ namespace RozitekAPIConnector.Controllers
         {
             try
             {
-                string query = @"select * from find_pod_by_position(@p_position)";
+                string query = @"SELECT tmd.map_data_code, tmd.pod_code, tp.case_num
+                                FROM tcs_map_data tmd
+                                left join tcs_pod tp
+                                on tp.pod_code = tmd. pod_code
+                                where tmd.map_data_code = @p_position
+                                limit 1;";
 
                 DataTable table = new DataTable();
                 string sqlDataSource = _appConfig.DbConnection;
@@ -166,10 +184,12 @@ namespace RozitekAPIConnector.Controllers
                 foreach (DataRow row in table.Rows)
                 {
                     PodAndPositionResult pod = new PodAndPositionResult();
-                    pod.PodCode = row["PodCode"].ToString();
-                    pod.Place = row["Place"].ToString();
+                    pod.PodCode = row["pod_code"].ToString();
+                    pod.Place = row["map_data_code"].ToString();
+                    pod.CaseNum = row["case_num"].ToString();
                     result.PodCode = pod.PodCode;
                     result.Place = pod.Place;
+                    result.CaseNum = pod.CaseNum;
                 }
 
                 return result;
@@ -184,7 +204,13 @@ namespace RozitekAPIConnector.Controllers
         {
             try
             {
-                string query = @"select * from find_free_pod_by_area(@p_area)";
+                string query = @"SELECT tmd.pod_code
+                                FROM tcs_map_data tmd
+                                LEFT JOIN tcs_pod tp 
+                                    ON tp.pod_code = tmd.pod_code 
+                                WHERE tmd.area_code = @p_area AND (tp.case_num IS NULL OR tp.case_num = '')
+                                ORDER BY coo_x asc
+   	                            limit 1;";
 
                 DataTable table = new DataTable();
                 string sqlDataSource = _appConfig.DbConnection;
@@ -210,53 +236,8 @@ namespace RozitekAPIConnector.Controllers
                 foreach (DataRow row in table.Rows)
                 {
                     string pod = new string("string");
-                    pod = row["PodCode"].ToString();
+                    pod = row["pod_code"].ToString();
                     result = pod;
-                }
-
-                return result;
-            }
-            catch (Exception e)
-            {
-                throw;
-            }
-        }
-
-        private async Task<TCSPodResult> QueryPodCodeAndMatAsync (string Position)
-        {
-            try
-            {
-                string query = @"select * from get_tcs_pod(@p_position, @p_task_status)";
-
-                DataTable table = new DataTable();
-                string sqlDataSource = _appConfig.DbConnection;
-                NpgsqlDataReader myReader;
-                using (NpgsqlConnection myCon = new NpgsqlConnection(sqlDataSource))
-                {
-                    myCon.Open();
-                    using (NpgsqlCommand myCommand = new NpgsqlCommand(query, myCon))
-                    {
-                        myCommand.Parameters.AddWithValue("@p_position", Position);
-                        myCommand.Parameters.AddWithValue("@p_task_status", "9");
-
-                        myReader = myCommand.ExecuteReader();
-                        table.Load(myReader);
-
-                        myReader.Close();
-                        myCon.Close();
-
-                    }
-                }
-
-                // Convert DataTable to List<TCSPodResult>
-                TCSPodResult result = new TCSPodResult();
-                foreach (DataRow row in table.Rows)
-                {
-                    TCSPodResult pod = new TCSPodResult();
-                    pod.PodCode = row["PodCode"].ToString();
-                    pod.CaseNum = row["CaseNum"].ToString();
-                    result.PodCode = pod.PodCode;
-                    result.CaseNum = pod.CaseNum;
                 }
 
                 return result;
@@ -300,7 +281,7 @@ namespace RozitekAPIConnector.Controllers
             }
         }
 
-        private async Task<ReturnMessage> returnPod(string Mat, string Pod, string Bin, string Strategy, string Position, string TaskTyp)
+        private async Task<ReturnMessage> returnPod(string Pod, string Bin, string Position)
         {
             try
             {
@@ -312,13 +293,13 @@ namespace RozitekAPIConnector.Controllers
 
                     var paramObj = new // Create an anonymous object to hold request parameters
                     {
-                        reqCode = GenerateRandomString(16), // Request code
+                        reqCode = GenerateRandomString(32), // Request code
                         binCode = Bin,
                         podCode = Pod,
                         wbCode = Position,
-                        taskTyp = TaskTyp,
-                        returnPodStrategy = Strategy,
-                        taskCode = GenerateRandomString(16),
+                        taskTyp = _appConfig.ReturnPodParams.TaskTyp,
+                        returnPodStrategy = _appConfig.ReturnPodParams.ReturnPodStrategy,
+                        taskCode = GenerateRandomString(32),
                     };
                     var dataJson = JsonConvert.SerializeObject(paramObj); // Serialize request parameters to JSON
                     var payload = new StringContent(dataJson, Encoding.UTF8, "application/json"); // Create a StringContent object with serialized JSON as payload
@@ -335,7 +316,7 @@ namespace RozitekAPIConnector.Controllers
             }
         }
 
-        private async Task<ReturnMessage> getOutPod(string Mat, string Pod, string Bin, string Strategy, string Position, string TaskTyp)
+        private async Task<ReturnMessage> getOutPod(string Pod, string Bin, string Position)
         {
             try
             {
@@ -347,12 +328,12 @@ namespace RozitekAPIConnector.Controllers
 
                     var paramObj = new // Create an anonymous object to hold request parameters
                     {
-                        reqCode = GenerateRandomString(16), // Request code
-                        taskTyp = TaskTyp,
+                        reqCode = GenerateRandomString(32), // Request code
+                        taskTyp = _appConfig.GetOutPodParams.TaskTyp,
                         data = new[]
                         { new
                         {
-                            taskCode = GenerateRandomString(16),
+                            taskCode = GenerateRandomString(32),
                             binCode = Bin,
                             wbCode = Position,
                             podCode = Pod,
@@ -378,7 +359,11 @@ namespace RozitekAPIConnector.Controllers
             try
             {
                 // SQL query to call stored function
-                string query = @"select * from count_tcs_task_by_status(@p_task_status, @p_task_typ, @p_wb_codes)";
+                string query = @"SELECT count(*)
+                                    FROM tcs_trans_task
+                                    WHERE task_status = @p_task_status
+                                        AND task_typ = @p_task_typ
+                                        AND wb_code = ANY(@p_wb_codes);";
 
                 // variable to hold the value of the quantity property
                 int quantity = 0;
