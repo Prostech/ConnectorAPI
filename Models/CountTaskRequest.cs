@@ -4,6 +4,5 @@
     {
         public string TaskStatus { get; set; }
         public string TaskTyp { get; set; }
-        public string[] WbCodes { get; set; }
     }
 }

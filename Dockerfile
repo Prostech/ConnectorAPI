@@ -19,4 +19,5 @@ RUN dotnet publish "RozitekAPIConnector.csproj" -c Release -o /app/publish /p:Us
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
+ENV TZ=Asia/Bangkok
 ENTRYPOINT ["dotnet", "RozitekAPIConnector.dll"]

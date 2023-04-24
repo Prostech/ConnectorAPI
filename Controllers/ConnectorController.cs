@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 using Npgsql;
@@ -19,72 +20,105 @@ namespace RozitekAPIConnector.Controllers
     public class ConnectorController : ControllerBase
     {
         private readonly AppSettings _appConfig;
+        private readonly ILogger<ConnectorController> _logger;
 
-        public ConnectorController(IOptions<AppSettings> appConfig)
+
+        public ConnectorController(IOptions<AppSettings> appConfig, ILogger<ConnectorController> logger)
         {
             _appConfig = appConfig.Value;
+            _logger = logger;
+            _logger.LogDebug(1, "NLog injected into ConnectorController");
         }
 
         [HttpPost("return-pod-factory-2-1")]
         public async Task<IActionResult> ReturnPodFactory2to1Async([FromBody] ReturnPodFactory2to1Request req)
         {
+            DateTime utcTime = DateTime.UtcNow;
+            TimeZoneInfo cstZone = TimeZoneInfo.FindSystemTimeZoneById("SE Asia Standard Time");
+            DateTime cstTime = TimeZoneInfo.ConvertTimeFromUtc(utcTime, cstZone);
             try
-            {
+             {
                 //Get PodCode And Mat
                 PodAndPositionResult getPodAndMatRes = await FindPodAtPosition(req.Position);
 
-                
+                if (getPodAndMatRes.PodCode == null || getPodAndMatRes.PodCode == "")
+                {
+                    var returnMessage = new
+                    {
+                        Id = -1,
+                        Message = $"There is no pod at position: {req.Position}",
+                    };
+                    _logger.LogError($"{returnMessage.ToString()} || {cstTime}");
+                    return new BadRequestObjectResult(returnMessage);
+                }    
+
                 if (getPodAndMatRes.CaseNum != null && getPodAndMatRes.CaseNum != "")
                 {
                     //Unbind Mat and Pod
                     ReturnMessage unBindCmdRes = await UnBindPodAndMat(getPodAndMatRes.CaseNum, getPodAndMatRes.PodCode);
 
                     if (!unBindCmdRes.Code.Equals("0", StringComparison.OrdinalIgnoreCase))
-                        return new BadRequestObjectResult(new
+                    {
+                        var returnMessage = new
                         {
                             Id = -1,
                             Message = "Unbind failed",
                             ErrorMessage = unBindCmdRes.Message,
-                        });
+                        };
+                        _logger.LogError($"{returnMessage.ToString()} || {cstTime}");
+                        return new BadRequestObjectResult(returnMessage);
+                    }    
                 }
 
                 string binCode = getPodAndMatRes.PodCode + _appConfig.BinCodeSuffix;
 
                 //getOutPod count
-                var countRes = await CountTaskByStatusAsync(req.countTaskRequest.TaskStatus, req.countTaskRequest.TaskTyp, req.countTaskRequest.WbCodes);
+                var countRes = await CountTaskByStatusAsync(req.Position);
                 if (countRes > 0)
                 {
                     ReturnMessage returnPodCmdRes = await returnPod(getPodAndMatRes.PodCode, binCode, req.Position);
                     if (!returnPodCmdRes.Code.Equals("0", StringComparison.OrdinalIgnoreCase))
-                        return new BadRequestObjectResult(new
+                    {
+                        var returnMessage = new
                         {
                             Id = -1,
                             Message = "returnPod failed",
                             ErrorMessage = returnPodCmdRes.Message,
-                        });
+                        };
+                        _logger.LogError($"{returnMessage.ToString()} || {cstTime}");
+                        return new BadRequestObjectResult(returnMessage);
+                    }
                 }
                 else
                 {
                     ReturnMessage returnPodCmdRes = await returnPod(getPodAndMatRes.PodCode, binCode, req.Position);
                     if (!returnPodCmdRes.Code.Equals("0", StringComparison.OrdinalIgnoreCase))
-                        return new BadRequestObjectResult(new
+                    {
+                        var returnMessage = new
                         {
                             Id = -1,
                             Message = "returnPod failed",
                             ErrorMessage = returnPodCmdRes.Message,
-                        });
+                        };
+                        _logger.LogError($"{returnMessage.ToString()} || {cstTime}");
+                        return new BadRequestObjectResult(returnMessage);
+                    }    
 
                     ReturnMessage getOutPodCmdRes = await getOutPod(getPodAndMatRes.PodCode, binCode, req.Position);
                     if (!getOutPodCmdRes.Code.Equals("0", StringComparison.OrdinalIgnoreCase))
-                        return new BadRequestObjectResult(new
+                    {
+                        var returnMessage = new
                         {
                             Id = -1,
                             Message = "getOutPod failed",
                             ErrorMessage = getOutPodCmdRes.Message,
-                        });
-
+                        };
+                        _logger.LogError($"{returnMessage.ToString()} || {cstTime}");
+                        return new BadRequestObjectResult(returnMessage);
+                    }
                 }
 
+                _logger.LogInformation($"Run API Success || {cstTime}");
                 return new JsonResult(new
                 {
                     Id = 1,
@@ -93,59 +127,83 @@ namespace RozitekAPIConnector.Controllers
             }
             catch (Exception ex)
             {
-                return new BadRequestObjectResult(new
+                var returnMessage = new
                 {
                     Id = -1,
-                    Message= ex.Message
-                });
+                    Message = ex.Message
+                };
+                _logger.LogError($"{returnMessage.ToString()} || {cstTime}");
+                return new BadRequestObjectResult(returnMessage);
             }
         }
 
         [HttpPost("return-mat-factory-1-2")]
         public async Task<IActionResult> ReturnMatFactory1to2([FromBody] ReturnMatFactory1to2Request req)
         {
+            DateTime utcTime = DateTime.UtcNow;
+            TimeZoneInfo cstZone = TimeZoneInfo.FindSystemTimeZoneById("SE Asia Standard Time");
+            DateTime cstTime = TimeZoneInfo.ConvertTimeFromUtc(utcTime, cstZone);
             try
             {
                 PodAndPositionResult findPodRes = new PodAndPositionResult();
                 findPodRes = await FindPodAtPosition(req.Position);
-                if (findPodRes.PodCode == null || findPodRes.PodCode == "") 
+                if (findPodRes.PodCode == null || findPodRes.PodCode == "")
                 {
                     string podCode = new string("");
                     podCode = await FindFreePodByArea(_appConfig.GetOutPodParams.Area);
+                    if (podCode == null || podCode == "")
+                    {
+                        var returnMessage = new
+                        {
+                            Id = -1,
+                            Message = $"There is no free pod at area: {_appConfig.GetOutPodParams.Area}",
+                        };
+                        _logger.LogError($"{returnMessage.ToString()} || {cstTime}");
+                        return new BadRequestObjectResult(returnMessage);
+                    }
                     string binCode = podCode + _appConfig.BinCodeSuffix;
                     //getOutPod
                     ReturnMessage getOutPodRes = new ReturnMessage();
                     getOutPodRes = await getOutPod(podCode, binCode, req.Position);
                     if (!getOutPodRes.Code.Equals("0", StringComparison.OrdinalIgnoreCase))
-                        return new BadRequestObjectResult(new
+                    {
+                        var returnMessage = new
                         {
                             Id = -1,
                             Message = "getOutPod failed",
                             ErrorMessage = getOutPodRes.Message,
-                        });
-                }
-                else
-                {
+                        };
+                        _logger.LogError($"{returnMessage.ToString()} || {cstTime}");
+                        return new BadRequestObjectResult(returnMessage);
+                    }
+
+                    _logger.LogInformation($"Run API Success || {cstTime}");
                     return new JsonResult(new
                     {
                         Id = 1,
-                        Message = "There is Pod " +findPodRes.PodCode+" at "+findPodRes.Place,
+                        Message = "Success"
                     });
                 }
-
-                return new JsonResult(new
+                else
                 {
-                    Id = 1,
-                    Message = "Success",
-                });
+                    var returnMessage = new
+                    {
+                        Id = 1,
+                        Message = "There is Pod " + findPodRes.PodCode + " at " + findPodRes.Place,
+                    };
+                    _logger.LogInformation($"{returnMessage.ToString()} || {cstTime}");
+                    return new JsonResult(returnMessage);
+                }
             }
             catch (Exception ex)
             {
-                return new BadRequestObjectResult(new
+                var returnMessage = new
                 {
                     Id = -1,
                     Message = ex.Message
-                });
+                };
+                _logger.LogError($"{returnMessage.ToString()} || {cstTime}");
+                return new BadRequestObjectResult(returnMessage);
             }
         }
 
@@ -256,7 +314,7 @@ namespace RozitekAPIConnector.Controllers
 
                 using (var client = new HttpClient()) // Create an HTTP client to make API call
                 {
-                    Uri endpoint = new Uri(_appConfig.Url + "/rcms/services/rest/hikRpcService/bindPodAndMat"); // API endpoint URL
+                    Uri endpoint = new Uri($"{_appConfig.RCSUrl}/rcms/services/rest/hikRpcService/bindPodAndMat"); // API endpoint URL
 
                     var paramObj = new // Create an anonymous object to hold request parameters
                     {
@@ -289,7 +347,7 @@ namespace RozitekAPIConnector.Controllers
 
                 using (var client = new HttpClient()) // Create an HTTP client to make API call
                 {
-                    Uri endpoint = new Uri(_appConfig.Url + "/rcms/services/rest/hikTpsService/returnPod"); // API endpoint URL
+                    Uri endpoint = new Uri($"{_appConfig.RCSUrl}/rcms/services/rest/hikTpsService/returnPod"); // API endpoint URL
 
                     var paramObj = new // Create an anonymous object to hold request parameters
                     {
@@ -324,7 +382,7 @@ namespace RozitekAPIConnector.Controllers
 
                 using (var client = new HttpClient()) // Create an HTTP client to make API call
                 {
-                    Uri endpoint = new Uri(_appConfig.Url + "/rcms/services/rest/hikTpsService/getOutPod"); // API endpoint URL
+                    Uri endpoint = new Uri($"{_appConfig.RCSUrl}/rcms/services/rest/hikTpsService/getOutPod"); // API endpoint URL
 
                     var paramObj = new // Create an anonymous object to hold request parameters
                     {
@@ -354,7 +412,7 @@ namespace RozitekAPIConnector.Controllers
             }
         }
 
-        private async Task<int> CountTaskByStatusAsync(string TaskStatus, string TaskTyp, string[] WbCodes)
+        private async Task<int> CountTaskByStatusAsync(string Position)
         {
             try
             {
@@ -363,7 +421,7 @@ namespace RozitekAPIConnector.Controllers
                                     FROM tcs_trans_task
                                     WHERE task_status = @p_task_status
                                         AND task_typ = @p_task_typ
-                                        AND wb_code = ANY(@p_wb_codes);";
+                                        AND wb_code = @p_wb_code;";
 
                 // variable to hold the value of the quantity property
                 int quantity = 0;
@@ -380,13 +438,13 @@ namespace RozitekAPIConnector.Controllers
                     using (NpgsqlCommand myCommand = new NpgsqlCommand(query, myCon))
                     {
                         // Add parameter for task status
-                        myCommand.Parameters.AddWithValue("@p_task_status", TaskStatus);
+                        myCommand.Parameters.AddWithValue("@p_task_status", _appConfig.CountTaskRequest.TaskStatus);
 
                         // Add parameter for task type
-                        myCommand.Parameters.AddWithValue("@p_task_typ", TaskTyp);
+                        myCommand.Parameters.AddWithValue("@p_task_typ", _appConfig.CountTaskRequest.TaskTyp);
 
                         // Add parameter for wb codes
-                        myCommand.Parameters.AddWithValue("@p_wb_codes", WbCodes);
+                        myCommand.Parameters.AddWithValue("@p_wb_code", Position);
 
                         // Execute query and read result into data reader
                         NpgsqlDataReader myReader = await myCommand.ExecuteReaderAsync();
