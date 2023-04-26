@@ -12,6 +12,7 @@ using System.Reflection.Emit;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 
 namespace RozitekAPIConnector.Controllers
 {
@@ -41,7 +42,7 @@ namespace RozitekAPIConnector.Controllers
                 //Get PodCode And Mat
                 PodAndPositionResult getPodAndMatRes = await FindPodAtPosition(req.Position);
 
-                if (getPodAndMatRes.PodCode == null || getPodAndMatRes.PodCode == "")
+                if (string.IsNullOrEmpty(getPodAndMatRes.PodCode))
                 {
                     var returnMessage = new
                     {
@@ -52,7 +53,7 @@ namespace RozitekAPIConnector.Controllers
                     return new BadRequestObjectResult(returnMessage);
                 }    
 
-                if (getPodAndMatRes.CaseNum != null && getPodAndMatRes.CaseNum != "")
+                if (!string.IsNullOrEmpty(getPodAndMatRes.CaseNum))
                 {
                     //Unbind Mat and Pod
                     ReturnMessage unBindCmdRes = await UnBindPodAndMat(getPodAndMatRes.CaseNum, getPodAndMatRes.PodCode);
@@ -73,7 +74,7 @@ namespace RozitekAPIConnector.Controllers
                 string binCode = getPodAndMatRes.PodCode + _appConfig.BinCodeSuffix;
 
                 //getOutPod count
-                var countRes = await CountTaskByStatusAsync(req.Position);
+                var countRes = await CountTaskByStatusAsync(req.Position, _appConfig.CountTaskRequest.TaskTyp);
                 if (countRes > 0)
                 {
                     ReturnMessage returnPodCmdRes = await returnPod(getPodAndMatRes.PodCode, binCode, req.Position);
@@ -147,11 +148,17 @@ namespace RozitekAPIConnector.Controllers
             {
                 PodAndPositionResult findPodRes = new PodAndPositionResult();
                 findPodRes = await FindPodAtPosition(req.Position);
-                if (findPodRes.PodCode == null || findPodRes.PodCode == "")
+
+                int countTaskBringPodToPosition = new int();
+                countTaskBringPodToPosition = await CountTaskByStatusAsync(req.Position, _appConfig.CountTaskRequest.TaskTyp);
+
+                _logger.LogInformation($"Quantity: {countTaskBringPodToPosition} || {cstTime}");
+
+                if (string.IsNullOrEmpty(findPodRes.PodCode) && countTaskBringPodToPosition == 0)
                 {
                     string podCode = new string("");
                     podCode = await FindFreePodByArea(_appConfig.GetOutPodParams.Area);
-                    if (podCode == null || podCode == "")
+                    if (string.IsNullOrEmpty(podCode))
                     {
                         var returnMessage = new
                         {
@@ -165,6 +172,7 @@ namespace RozitekAPIConnector.Controllers
                     //getOutPod
                     ReturnMessage getOutPodRes = new ReturnMessage();
                     getOutPodRes = await getOutPod(podCode, binCode, req.Position);
+
                     if (!getOutPodRes.Code.Equals("0", StringComparison.OrdinalIgnoreCase))
                     {
                         var returnMessage = new
@@ -266,9 +274,12 @@ namespace RozitekAPIConnector.Controllers
                                 FROM tcs_map_data tmd
                                 LEFT JOIN tcs_pod tp 
                                     ON tp.pod_code = tmd.pod_code 
-                                WHERE tmd.area_code = @p_area AND (tp.case_num IS NULL OR tp.case_num = '')
+                                WHERE tmd.area_code = @p_area
+                                AND (tp.case_num IS NULL OR tp.case_num = '')
+                                and tmd.pod_code is not null
+                                and tmd.pod_code <> ''
                                 ORDER BY coo_x asc
-   	                            limit 1;";
+								limit 1;";
 
                 DataTable table = new DataTable();
                 string sqlDataSource = _appConfig.DbConnection;
@@ -395,6 +406,10 @@ namespace RozitekAPIConnector.Controllers
                             binCode = Bin,
                             wbCode = Position,
                             podCode = Pod,
+                            groupId = _appConfig.GetOutPodParams.GroupId,
+                            liftStatus = _appConfig.GetOutPodParams.LiftStatus,
+                            pickTime = _appConfig.GetOutPodParams.PickTime,
+                            priority = _appConfig.GetOutPodParams.Priority
                         } }
                     };
                     var dataJson = JsonConvert.SerializeObject(paramObj); // Serialize request parameters to JSON
@@ -412,7 +427,68 @@ namespace RozitekAPIConnector.Controllers
             }
         }
 
-        private async Task<int> CountTaskByStatusAsync(string Position)
+        private async Task<int> CountTaskByStatusAsync(string Position, string taskTyp)
+        {
+            try
+            {
+                // SQL query to call stored function
+                string query = @"SELECT count(*)
+                                FROM tcs_trans_task
+                                WHERE task_status = @p_task_status
+                                    AND (@p_task_typ = '' OR task_typ = @p_task_typ)
+                                    AND wb_code = @p_wb_code;";
+
+                // variable to hold the value of the quantity property
+                int quantity = 0;
+
+                // Connection string for database
+                string sqlDataSource = _appConfig.DbConnection;
+
+                // Create and open database connection
+                using (NpgsqlConnection myCon = new NpgsqlConnection(sqlDataSource))
+                {
+                    await myCon.OpenAsync();
+
+                    // Create and execute database command
+                    using (NpgsqlCommand myCommand = new NpgsqlCommand(query, myCon))
+                    {
+                        // Add parameter for task status
+                        myCommand.Parameters.AddWithValue("@p_task_status", _appConfig.CountTaskRequest.TaskStatus);
+
+                        // Add parameter for task type
+                        myCommand.Parameters.AddWithValue("@p_task_typ", taskTyp);
+
+                        // Add parameter for wb codes
+                        myCommand.Parameters.AddWithValue("@p_wb_code", Position);
+
+                        // Execute query and read result into data reader
+                        NpgsqlDataReader myReader = await myCommand.ExecuteReaderAsync();
+
+                        // Check if there is a row in the result set
+                        if (myReader.Read())
+                        {
+                            // Extract the value of the quantity property from the first column
+                            quantity = myReader.GetInt32(0);
+                        }
+
+                        // Close data reader
+                        myReader.Close();
+
+                        // Close database connection
+                        myCon.Close();
+                    }
+                }
+
+                // Return quantity as result
+                return quantity;
+            }
+            catch (Exception e)
+            {
+                throw;
+            }
+        }
+
+        private async Task<int> FindExecutingTaskToPosition(string Position)
         {
             try
             {
@@ -441,8 +517,6 @@ namespace RozitekAPIConnector.Controllers
                         myCommand.Parameters.AddWithValue("@p_task_status", _appConfig.CountTaskRequest.TaskStatus);
 
                         // Add parameter for task type
-                        myCommand.Parameters.AddWithValue("@p_task_typ", _appConfig.CountTaskRequest.TaskTyp);
-
                         // Add parameter for wb codes
                         myCommand.Parameters.AddWithValue("@p_wb_code", Position);
 
@@ -489,7 +563,7 @@ namespace RozitekAPIConnector.Controllers
             try
             {
                 string result = new string("");
-                result = "Deploy v1.4";
+                result = _appConfig.DbConnection;
                 return new JsonResult(result);
             }
             catch (Exception ex)

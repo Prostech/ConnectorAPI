@@ -17,5 +17,9 @@
         public string? TaskTyp { get; set; }
         public string? ReturnPodStrategy { get; set;}
         public string? Area { get; set; }
+        public string? GroupId { get; set; }
+        public string? LiftStatus { get; set; }
+        public string? PickTime { get; set;}
+        public string? Priority { get; set; }
     }
 }

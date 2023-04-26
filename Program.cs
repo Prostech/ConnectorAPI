@@ -11,7 +11,17 @@ var logger = NLog.LogManager.Setup().LoadConfigurationFromAppSettings().GetCurre
 logger.Debug("init main");
 try
 {
-    var builder = WebApplication.CreateBuilder(args);
+    var configuration = new ConfigurationBuilder()
+    .AddJsonFile("appsettings.json", optional: false, reloadOnChange: false)
+    .Build();
+
+    string envInUsed = configuration.GetSection("Logging:AppSettings:ASPNETCORE_ENVIRONMENT").Value;
+
+    var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+    {
+        Args = args,
+        EnvironmentName = envInUsed
+    });
 
     // Add services to the container.
 
