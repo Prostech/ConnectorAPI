@@ -78,10 +78,11 @@ try
     if (app.Environment.IsDevelopment())
     {
         // Additional development-specific configuration can be added here
+        app.UseSwagger();
+        app.UseSwaggerUI();
     }
 
-    app.UseSwagger();
-    app.UseSwaggerUI();
+
 
     //app.UseMiddleware<Middleware>();
 

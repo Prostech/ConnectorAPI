@@ -8,4 +8,11 @@
         public string Code { get; set; }
         public string Interrupt { get; set; }
     }
+
+    public class Result 
+    { 
+        public int Id { get; set; }
+        public string Message { get; set; }
+        public string ErrorMessage { get; set; }
+    }
 }

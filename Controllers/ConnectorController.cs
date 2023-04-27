@@ -23,12 +23,10 @@ namespace RozitekAPIConnector.Controllers
         private readonly AppSettings _appConfig;
         private readonly ILogger<ConnectorController> _logger;
 
-
         public ConnectorController(IOptions<AppSettings> appConfig, ILogger<ConnectorController> logger)
         {
             _appConfig = appConfig.Value;
             _logger = logger;
-            _logger.LogDebug(1, "NLog injected into ConnectorController");
         }
 
         [HttpPost("return-pod-factory-2-1")]
@@ -139,7 +137,7 @@ namespace RozitekAPIConnector.Controllers
         }
 
         [HttpPost("return-mat-factory-1-2")]
-        public async Task<IActionResult> ReturnMatFactory1to2([FromBody] ReturnMatFactory1to2Request req)
+        public async Task<IActionResult> ReturnMatFactory1to2([FromBody] ReturnMatFactory1to2Request req, int offset)
         {
             DateTime utcTime = DateTime.UtcNow;
             TimeZoneInfo cstZone = TimeZoneInfo.FindSystemTimeZoneById("SE Asia Standard Time");
@@ -152,12 +150,12 @@ namespace RozitekAPIConnector.Controllers
                 int countTaskBringPodToPosition = new int();
                 countTaskBringPodToPosition = await CountTaskByStatusAsync(req.Position, _appConfig.CountTaskRequest.TaskTyp);
 
-                _logger.LogInformation($"Quantity: {countTaskBringPodToPosition} || {cstTime}");
+                _logger.LogInformation($"getOutPod executing quantity: {countTaskBringPodToPosition} || {cstTime}");
 
                 if (string.IsNullOrEmpty(findPodRes.PodCode) && countTaskBringPodToPosition == 0)
                 {
                     string podCode = new string("");
-                    podCode = await FindFreePodByArea(_appConfig.GetOutPodParams.Area);
+                    podCode = await FindFreePodByArea(_appConfig.GetOutPodParams.Area, offset);
                     if (string.IsNullOrEmpty(podCode))
                     {
                         var returnMessage = new
@@ -168,6 +166,8 @@ namespace RozitekAPIConnector.Controllers
                         _logger.LogError($"{returnMessage.ToString()} || {cstTime}");
                         return new BadRequestObjectResult(returnMessage);
                     }
+                    _logger.LogInformation($"Pod free at area {_appConfig.GetOutPodParams.Area}: {podCode} || {cstTime}");
+
                     string binCode = podCode + _appConfig.BinCodeSuffix;
                     //getOutPod
                     ReturnMessage getOutPodRes = new ReturnMessage();
@@ -196,11 +196,11 @@ namespace RozitekAPIConnector.Controllers
                 {
                     var returnMessage = new
                     {
-                        Id = 1,
+                        Id = -1,
                         Message = "There is Pod " + findPodRes.PodCode + " at " + findPodRes.Place,
                     };
                     _logger.LogInformation($"{returnMessage.ToString()} || {cstTime}");
-                    return new JsonResult(returnMessage);
+                    return new BadRequestObjectResult(returnMessage);
                 }
             }
             catch (Exception ex)
@@ -266,7 +266,7 @@ namespace RozitekAPIConnector.Controllers
             }
         }
 
-        private async Task<string> FindFreePodByArea(string area)
+        private async Task<string> FindFreePodByArea(string area, int offset)
         {
             try
             {
@@ -278,8 +278,9 @@ namespace RozitekAPIConnector.Controllers
                                 AND (tp.case_num IS NULL OR tp.case_num = '')
                                 and tmd.pod_code is not null
                                 and tmd.pod_code <> ''
-                                ORDER BY coo_x asc
-								limit 1;";
+                                ORDER BY coo_x asc, tmd.pod_code
+								limit 1
+                                offset @p_offset;";
 
                 DataTable table = new DataTable();
                 string sqlDataSource = _appConfig.DbConnection;
@@ -290,6 +291,7 @@ namespace RozitekAPIConnector.Controllers
                     using (NpgsqlCommand myCommand = new NpgsqlCommand(query, myCon))
                     {
                         myCommand.Parameters.AddWithValue("@p_area", area);
+                        myCommand.Parameters.AddWithValue("@p_offset", offset);
 
                         myReader = myCommand.ExecuteReader();
                         table.Load(myReader);
