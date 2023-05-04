@@ -137,7 +137,7 @@ namespace RozitekAPIConnector.Controllers
         }
 
         [HttpPost("return-mat-factory-1-2")]
-        public async Task<IActionResult> ReturnMatFactory1to2([FromBody] ReturnMatFactory1to2Request req, int offset)
+        public async Task<IActionResult> ReturnMatFactory1to2([FromBody] ReturnMatFactory1to2Request req)
         {
             DateTime utcTime = DateTime.UtcNow;
             TimeZoneInfo cstZone = TimeZoneInfo.FindSystemTimeZoneById("SE Asia Standard Time");
@@ -148,15 +148,15 @@ namespace RozitekAPIConnector.Controllers
                 findPodRes = await FindPodAtPosition(req.Position);
 
                 int countTaskBringPodToPosition = new int();
-                countTaskBringPodToPosition = await CountTaskByStatusAsync(req.Position, _appConfig.CountTaskRequest.TaskTyp);
+                countTaskBringPodToPosition = await CountTaskByStatusAsync(findPodRes.Place, _appConfig.CountTaskRequest.TaskTyp);
 
                 _logger.LogInformation($"getOutPod executing quantity: {countTaskBringPodToPosition} || {cstTime}");
 
                 if (string.IsNullOrEmpty(findPodRes.PodCode) && countTaskBringPodToPosition == 0)
                 {
-                    string podCode = new string("");
-                    podCode = await FindFreePodByArea(_appConfig.GetOutPodParams.Area, offset);
-                    if (string.IsNullOrEmpty(podCode))
+                    FreePod podCode = new FreePod();
+                    podCode = await FindFreePodByArea(_appConfig.GetOutPodParams.Area);
+                    if (string.IsNullOrEmpty(podCode.PodCode))
                     {
                         var returnMessage = new
                         {
@@ -168,21 +168,43 @@ namespace RozitekAPIConnector.Controllers
                     }
                     _logger.LogInformation($"Pod free at area {_appConfig.GetOutPodParams.Area}: {podCode} || {cstTime}");
 
-                    string binCode = podCode + _appConfig.BinCodeSuffix;
-                    //getOutPod
-                    ReturnMessage getOutPodRes = new ReturnMessage();
-                    getOutPodRes = await getOutPod(podCode, binCode, req.Position);
-
-                    if (!getOutPodRes.Code.Equals("0", StringComparison.OrdinalIgnoreCase))
+                    if (findPodRes.Place.Equals("100036AB042713", StringComparison.OrdinalIgnoreCase) || 
+                        findPodRes.Place.Equals("098636AB042713", StringComparison.OrdinalIgnoreCase))
                     {
-                        var returnMessage = new
+                        string binCode = podCode.PodCode + _appConfig.BinCodeSuffix;
+                        //getOutPod
+                        ReturnMessage getOutPodRes = new ReturnMessage();
+                        getOutPodRes = await getOutPod(podCode.PodCode, binCode, findPodRes.Place);
+
+                        if (!getOutPodRes.Code.Equals("0", StringComparison.OrdinalIgnoreCase))
                         {
-                            Id = -1,
-                            Message = "getOutPod failed",
-                            ErrorMessage = getOutPodRes.Message,
-                        };
-                        _logger.LogError($"{returnMessage.ToString()} || {cstTime}");
-                        return new BadRequestObjectResult(returnMessage);
+                            var returnMessage = new
+                            {
+                                Id = -1,
+                                Message = "getOutPod failed",
+                                ErrorMessage = getOutPodRes.Message,
+                            };
+                            _logger.LogError($"{returnMessage.ToString()} || {cstTime}");
+                            return new BadRequestObjectResult(returnMessage);
+                        }
+                    }
+                    else
+                    {
+                        //genAgvSchedulingTask
+                        ReturnMessage genAgvSchedulingTaskRes = new ReturnMessage();
+                        genAgvSchedulingTaskRes = await genAgvSchedulingTask(podCode.PodCode, podCode.PodCodePosition, findPodRes.Place);
+
+                        if (!genAgvSchedulingTaskRes.Code.Equals("0", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var returnMessage = new
+                            {
+                                Id = -1,
+                                Message = "genAgvSchedulingTaskRes failed",
+                                ErrorMessage = genAgvSchedulingTaskRes.Message,
+                            };
+                            _logger.LogError($"{returnMessage.ToString()} || {cstTime}");
+                            return new BadRequestObjectResult(returnMessage);
+                        }
                     }
 
                     _logger.LogInformation($"Run API Success || {cstTime}");
@@ -219,11 +241,11 @@ namespace RozitekAPIConnector.Controllers
         {
             try
             {
-                string query = @"SELECT tmd.map_data_code, tmd.pod_code, tp.case_num
+                string query = @"SELECT tmd.map_data_code, tmd.pod_code, tp.case_num, tmd.data_name
                                 FROM tcs_map_data tmd
                                 left join tcs_pod tp
                                 on tp.pod_code = tmd. pod_code
-                                where tmd.map_data_code = @p_position
+                                where tmd.data_name = @p_position
                                 limit 1;";
 
                 DataTable table = new DataTable();
@@ -253,9 +275,8 @@ namespace RozitekAPIConnector.Controllers
                     pod.PodCode = row["pod_code"].ToString();
                     pod.Place = row["map_data_code"].ToString();
                     pod.CaseNum = row["case_num"].ToString();
-                    result.PodCode = pod.PodCode;
-                    result.Place = pod.Place;
-                    result.CaseNum = pod.CaseNum;
+                    pod.DataName = row["data_name"].ToString();
+                    result = pod;
                 }
 
                 return result;
@@ -266,21 +287,21 @@ namespace RozitekAPIConnector.Controllers
             }
         }
 
-        private async Task<string> FindFreePodByArea(string area, int offset)
+        private async Task<FreePod> FindFreePodByArea(string area)
         {
             try
             {
-                string query = @"SELECT tmd.pod_code
+                string query = @"SELECT tmd.pod_code, tmd.map_data_code
                                 FROM tcs_map_data tmd
-                                LEFT JOIN tcs_pod tp 
-                                    ON tp.pod_code = tmd.pod_code 
+                                LEFT JOIN tcs_pod tp ON tp.pod_code = tmd.pod_code
+                                LEFT JOIN tcs_trans_task ttt ON tmd.pod_code = ttt.pod_code AND ttt.task_status IN ('1', '2', '3')
                                 WHERE tmd.area_code = @p_area
                                 AND (tp.case_num IS NULL OR tp.case_num = '')
-                                and tmd.pod_code is not null
-                                and tmd.pod_code <> ''
-                                ORDER BY coo_x asc, tmd.pod_code
-								limit 1
-                                offset @p_offset;";
+                                AND tmd.pod_code IS NOT NULL
+                                AND tmd.pod_code <> ''
+                                AND ttt.pod_code IS NULL
+                                ORDER BY tmd.coo_x ASC, tmd.pod_code
+                                limit 1;";
 
                 DataTable table = new DataTable();
                 string sqlDataSource = _appConfig.DbConnection;
@@ -291,7 +312,6 @@ namespace RozitekAPIConnector.Controllers
                     using (NpgsqlCommand myCommand = new NpgsqlCommand(query, myCon))
                     {
                         myCommand.Parameters.AddWithValue("@p_area", area);
-                        myCommand.Parameters.AddWithValue("@p_offset", offset);
 
                         myReader = myCommand.ExecuteReader();
                         table.Load(myReader);
@@ -303,11 +323,13 @@ namespace RozitekAPIConnector.Controllers
                 }
 
                 // Convert DataTable to List<TCSPodResult>
-                string result = new string("");
+                FreePod result = new FreePod();
                 foreach (DataRow row in table.Rows)
                 {
-                    string pod = new string("string");
-                    pod = row["pod_code"].ToString();
+                    FreePod pod = new FreePod();
+                    pod.PodCode = row["pod_code"].ToString();
+                    pod.PodCodePosition = row["map_data_code"].ToString();
+
                     result = pod;
                 }
 
@@ -413,6 +435,50 @@ namespace RozitekAPIConnector.Controllers
                             pickTime = _appConfig.GetOutPodParams.PickTime,
                             priority = _appConfig.GetOutPodParams.Priority
                         } }
+                    };
+                    var dataJson = JsonConvert.SerializeObject(paramObj); // Serialize request parameters to JSON
+                    var payload = new StringContent(dataJson, Encoding.UTF8, "application/json"); // Create a StringContent object with serialized JSON as payload
+
+                    var resultString = client.PostAsync(endpoint, payload).Result.Content.ReadAsStringAsync().Result; // Send POST request to API, read response content as string and store in 'result' variable
+                    result = JsonConvert.DeserializeObject<ReturnMessage>(resultString);
+                }
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                throw;
+            }
+        }
+
+        private async Task<ReturnMessage> genAgvSchedulingTask(string Pod, string FromPosition, string ToPosition)
+        {
+            try
+            {
+                ReturnMessage result = new ReturnMessage();
+
+                using (var client = new HttpClient()) // Create an HTTP client to make API call
+                {
+                    Uri endpoint = new Uri($"{_appConfig.RCSUrl}/rcms/services/rest/hikRpcService/genAgvSchedulingTask"); // API endpoint URL
+
+                    var paramObj = new // Create an anonymous object to hold request parameters
+                    {
+                        reqCode = GenerateRandomString(32), // Request code
+                        taskTyp = _appConfig.GenAgvSchedulingTaskParams.TaskTyp,
+                        positionCodePath = new[]
+                        {
+                            new
+                            {
+                                positionCode = FromPosition,
+                                type = "00"
+                            },
+                            new
+                            {
+                                positionCode = ToPosition,
+                                type = "00"
+                            }
+                        },
+                        podCode = Pod
                     };
                     var dataJson = JsonConvert.SerializeObject(paramObj); // Serialize request parameters to JSON
                     var payload = new StringContent(dataJson, Encoding.UTF8, "application/json"); // Create a StringContent object with serialized JSON as payload
@@ -565,7 +631,7 @@ namespace RozitekAPIConnector.Controllers
             try
             {
                 string result = new string("");
-                result = _appConfig.DbConnection;
+                result = _appConfig.DbConnection+ " v4";
                 return new JsonResult(result);
             }
             catch (Exception ex)

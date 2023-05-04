@@ -8,6 +8,7 @@
         public string? BinCodeSuffix { get; set; }
         public RcsApiParams? ReturnPodParams { get; set; }
         public RcsApiParams? GetOutPodParams { get; set; } 
+        public RcsApiParams? GenAgvSchedulingTaskParams { get; set; }
         public CountTaskRequest? CountTaskRequest { get; set; }
         public string Positions { get; set; }
     }

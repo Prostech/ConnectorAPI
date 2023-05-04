@@ -31,22 +31,13 @@ namespace RozitekAPIConnector.Jobs
             try
             {
                 string[] positions = _appConfig.Positions.Split(',');
-                int count = 0;
 
                 foreach (string position in positions)
                 {
                     ReturnMatFactory1to2Request req = new ReturnMatFactory1to2Request();
                     req.Position = position;
-                    IActionResult res = await _controller.ReturnMatFactory1to2(req, count);
-                    if (res is JsonResult)
-                    {
-                        _logger.LogInformation($"Job executed: {position} || {cstTime}");
-                        count++;
-                    }
-                    else
-                    {
-                        _logger.LogInformation($"Job do not execute: {position} || {cstTime}");
-                    }    
+                    IActionResult res = await _controller.ReturnMatFactory1to2(req);
+                    _logger.LogInformation($"Job executed success at: {position} || {cstTime}");
                 }
             }
             catch (Exception ex)
