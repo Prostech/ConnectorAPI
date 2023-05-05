@@ -699,7 +699,7 @@ namespace RozitekAPIConnector.Controllers
             try
             {
                 string result = new string("");
-                result = _appConfig.DbConnection+ " v4";
+                result = _appConfig.DbConnection+ " v6";
                 return new JsonResult(result);
             }
             catch (Exception ex)
