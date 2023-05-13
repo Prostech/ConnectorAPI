@@ -11,6 +11,13 @@
         public RcsApiParams? GenAgvSchedulingTaskParams { get; set; }
         public CountTaskRequest? CountTaskRequest { get; set; }
         public string Positions { get; set; }
+        public CancelTaskParams CancelTaskParams { get; set; }
+    }
+
+    public class CancelTaskParams
+    {
+        public string ForceCancel { get; set; }
+        public string Positions { get; set; }
     }
 
     public class RcsApiParams

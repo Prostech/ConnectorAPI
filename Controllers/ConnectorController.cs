@@ -72,10 +72,14 @@ namespace RozitekAPIConnector.Controllers
                 string binCode = getPodAndMatRes.PodCode + _appConfig.BinCodeSuffix;
 
                 //getOutPod count
-                var countRes = await CountTaskByExecutingAsync(req.Position, _appConfig.CountTaskRequest.TaskTyp);
+                var countRes = await CountTaskByExecutingAsync(getPodAndMatRes.Place, _appConfig.CountTaskRequest.TaskTyp);
+                _logger.LogDebug($"getOutPod executing count:{countRes} || {cstTime}");
+
                 if (countRes > 0)
                 {
-                    ReturnMessage returnPodCmdRes = await returnPod(getPodAndMatRes.PodCode, binCode, req.Position);
+                    _logger.LogDebug($"Case1: returnPod || {cstTime}");
+
+                    ReturnMessage returnPodCmdRes = await returnPod(getPodAndMatRes.PodCode, binCode, getPodAndMatRes.Place);
                     if (!returnPodCmdRes.Code.Equals("0", StringComparison.OrdinalIgnoreCase))
                     {
                         var returnMessage = new
@@ -87,10 +91,27 @@ namespace RozitekAPIConnector.Controllers
                         _logger.LogError($"{returnMessage.ToString()} || {cstTime}");
                         return new BadRequestObjectResult(returnMessage);
                     }
+
                 }
                 else
                 {
-                    ReturnMessage returnPodCmdRes = await returnPod(getPodAndMatRes.PodCode, binCode, req.Position);
+                    _logger.LogDebug($"Case2: returnPod || {cstTime}");
+
+                    FreePod podCode = new FreePod();
+                    podCode = await FindFreePodByArea(_appConfig.GetOutPodParams.Area);
+                    if (string.IsNullOrEmpty(podCode.PodCode))
+                    {
+                        var returnMessage = new
+                        {
+                            Id = -1,
+                            Message = $"There is no free pod at area: {_appConfig.GetOutPodParams.Area}",
+                        };
+                        _logger.LogError($"{returnMessage.ToString()} || {cstTime}");
+                        return new BadRequestObjectResult(returnMessage);
+                    }
+                    _logger.LogInformation($"Pod free at area {_appConfig.GetOutPodParams.Area}: {podCode} || {cstTime}");
+
+                    ReturnMessage returnPodCmdRes = await returnPod(getPodAndMatRes.PodCode, binCode, getPodAndMatRes.Place);
                     if (!returnPodCmdRes.Code.Equals("0", StringComparison.OrdinalIgnoreCase))
                     {
                         var returnMessage = new
@@ -101,9 +122,14 @@ namespace RozitekAPIConnector.Controllers
                         };
                         _logger.LogError($"{returnMessage.ToString()} || {cstTime}");
                         return new BadRequestObjectResult(returnMessage);
-                    }    
+                    }
 
-                    ReturnMessage getOutPodCmdRes = await getOutPod(getPodAndMatRes.PodCode, binCode, req.Position);
+                    
+
+                    _logger.LogDebug($"Case2: getOutPod || {cstTime}");
+
+
+                    ReturnMessage getOutPodCmdRes = await getOutPod(podCode.PodCode, podCode.PodCode+_appConfig.BinCodeSuffix, getPodAndMatRes.Place);
                     if (!getOutPodCmdRes.Code.Equals("0", StringComparison.OrdinalIgnoreCase))
                     {
                         var returnMessage = new
@@ -121,7 +147,8 @@ namespace RozitekAPIConnector.Controllers
                 return new JsonResult(new
                 {
                     Id = 1,
-                    Message = "Success"
+                    Message = "Success",
+                    Task = countRes
                 });
             }
             catch (Exception ex)
@@ -248,6 +275,35 @@ namespace RozitekAPIConnector.Controllers
             }
         }
 
+        [HttpPost("cancel-task")]
+        public async Task<IActionResult> CancelTaskAsync([FromBody] CancelTaskReq model)
+        {
+            try
+            {
+                List<string> taskCodes = await GetTaskCodeExecutingTooLong(model.Position);
+                foreach (string taskCode in taskCodes)
+                {
+                    await CancelTask(taskCode);
+                }
+
+                return new JsonResult(new
+                {
+                    Id = 1,
+                    Message = "Cancel task success"
+                });
+            }
+            catch (Exception ex)
+            {
+                var returnMessage = new
+                {
+                    Id = -1,
+                    Message = ex.Message
+                };
+                _logger.LogError($"{returnMessage.ToString()}");
+                return new BadRequestObjectResult(returnMessage);
+            }
+        }
+
         private async Task<PodAndPositionResult> FindPodAtPosition(string Position)
         {
             try
@@ -288,6 +344,54 @@ namespace RozitekAPIConnector.Controllers
                     pod.CaseNum = row["case_num"].ToString();
                     pod.DataName = row["data_name"].ToString();
                     result = pod;
+                }
+
+                return result;
+            }
+            catch (Exception e)
+            {
+                throw;
+            }
+        }
+
+        private async Task<List<string>> GetTaskCodeExecutingTooLong(string Position)
+        {
+            try
+            {
+                string query = $@"SELECT ttt.main_task_num, ttt.date_cr
+                                FROM tcs_main_task ttt
+                                WHERE ttt.task_status = @p_taskstatus
+                                  AND ttt.via_codes like '%{Position}%';";
+
+                DataTable table = new DataTable();
+                string sqlDataSource = _appConfig.DbConnection;
+                NpgsqlDataReader myReader;
+                using (NpgsqlConnection myCon = new NpgsqlConnection(sqlDataSource))
+                {
+                    myCon.Open();
+                    using (NpgsqlCommand myCommand = new NpgsqlCommand(query, myCon))
+                    {
+                        myCommand.Parameters.AddWithValue("@p_taskstatus", _appConfig.CountTaskRequest.TaskStatus);
+
+
+                        myReader = myCommand.ExecuteReader();
+                        table.Load(myReader);
+
+                        myReader.Close();
+                        myCon.Close();
+
+                    }
+                }
+
+                // Convert DataTable to List<TCSPodResult>
+                List<string> result = new List<string>();
+                foreach (DataRow row in table.Rows)
+                {
+                    DateTime now = DateTime.Now;  // Current date and time
+                    DateTime date_cr = Convert.ToDateTime(row["date_cr"]).AddHours(-1);
+                    TimeSpan difference = now.Subtract(date_cr);
+                    if (difference.TotalMinutes > 5)
+                        result.Add(row["main_task_num"].ToString());
                 }
 
                 return result;
@@ -347,6 +451,38 @@ namespace RozitekAPIConnector.Controllers
                 return result;
             }
             catch (Exception e)
+            {
+                throw;
+            }
+        }
+
+        private async Task<ReturnMessage> CancelTask(string taskCode)
+        {
+            try
+            {
+                ReturnMessage result = new ReturnMessage();
+
+                using (var client = new HttpClient()) // Create an HTTP client to make API call
+                {
+                    Uri endpoint = new Uri($"{_appConfig.RCSUrl}/rcms/services/rest/hikRpcService/cancelTask"); // API endpoint URL
+
+                    var paramObj = new // Create an anonymous object to hold request parameters
+                    {
+                        reqCode = GenerateRandomString(32), // Request code
+                        forceCancel = _appConfig.CancelTaskParams.ForceCancel,
+                        taskCode = taskCode
+                    };
+
+                    var dataJson = JsonConvert.SerializeObject(paramObj); // Serialize request parameters to JSON
+                    var payload = new StringContent(dataJson, Encoding.UTF8, "application/json"); // Create a StringContent object with serialized JSON as payload
+
+                    var resultString = client.PostAsync(endpoint, payload).Result.Content.ReadAsStringAsync().Result; // Send POST request to API, read response content as string and store in 'result' variable
+                    result = JsonConvert.DeserializeObject<ReturnMessage>(resultString);
+                }
+
+                return result;
+            }
+            catch (Exception ex)
             {
                 throw;
             }
@@ -699,7 +835,7 @@ namespace RozitekAPIConnector.Controllers
             try
             {
                 string result = new string("");
-                result = _appConfig.DbConnection+ " v6";
+                result = _appConfig.DbConnection+ " v16 ";
                 return new JsonResult(result);
             }
             catch (Exception ex)
