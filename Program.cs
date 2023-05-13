@@ -51,19 +51,23 @@ try
         services.AddScoped<ConnectorController>();
 
 
-        if (hostContext.Configuration.GetSection("Quartz:RunAPI:IsEnabled").Value.Equals("true", StringComparison.OrdinalIgnoreCase))
-        {
-            services.AddQuartz(q =>
+
+        services.AddQuartz(q =>
             {
                 q.UseMicrosoftDependencyInjectionScopedJobFactory();
-
-                // Register the job, loading the schedule from configuration
-                q.AddJobAndTrigger<RunAPI>(hostContext.Configuration);
-
+                if (hostContext.Configuration.GetSection("Quartz:RunAPI:IsEnabled").Value.Equals("true", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Register the job, loading the schedule from configuration
+                    q.AddJobAndTrigger<RunAPI>(hostContext.Configuration);
+                }
+                if (hostContext.Configuration.GetSection("Quartz:DisableTask:IsEnabled").Value.Equals("true", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Register the job, loading the schedule from configuration
+                    q.AddJobAndTrigger<DisableTask>(hostContext.Configuration);
+                }
             });
 
-            services.AddQuartzHostedService(q => q.WaitForJobsToComplete = true);
-        }    
+        services.AddQuartzHostedService(q => q.WaitForJobsToComplete = true);
     });;
 
 
