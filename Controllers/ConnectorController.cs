@@ -835,7 +835,7 @@ namespace RozitekAPIConnector.Controllers
             try
             {
                 string result = new string("");
-                result = _appConfig.DbConnection+ " v16 ";
+                result = _appConfig.DbConnection+ " v1.1 ";
                 return new JsonResult(result);
             }
             catch (Exception ex)
