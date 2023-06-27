@@ -350,7 +350,7 @@ namespace RozitekAPIConnector.Controllers
             }
             catch (Exception e)
             {
-                throw;
+                _logger.LogError(e.Message);
             }
         }
 
@@ -402,24 +402,21 @@ namespace RozitekAPIConnector.Controllers
             }
         }
 
-        private async Task<FreePod> FindFreePodByArea(string area)
+        private string FindPodAtArea(string area)
         {
             try
             {
-                string query = @"SELECT tmd.pod_code, tmd.map_data_code
-                                FROM tcs_map_data tmd
-                                LEFT JOIN tcs_pod tp ON tp.pod_code = tmd.pod_code
-                                LEFT JOIN tcs_trans_task ttt ON tmd.pod_code = ttt.pod_code AND ttt.task_status IN ('1', '2', '3')
-                                WHERE tmd.area_code = @p_area
-                                AND (tp.case_num IS NULL OR tp.case_num = '')
-                                AND tmd.pod_code IS NOT NULL
-                                AND tmd.pod_code <> ''
-                                AND ttt.pod_code IS NULL
-                                ORDER BY tmd.coo_x ASC, tmd.pod_code
-                                limit 1;";
+                string query = @"SELECT tmd.pod_code
+                        FROM tcs_map_data tmd
+                        LEFT JOIN tcs_main_task ttt ON tmd.pod_code = ttt.pod_code AND ttt.task_status IN ('1', '2', '3')
+                        WHERE tmd.area_code = @p_area
+                        AND tmd.pod_code IS NOT NULL
+                        AND tmd.pod_code <> ''
+                        AND ttt.pod_code IS NULL
+                        LIMIT 1;";
 
                 DataTable table = new DataTable();
-                string sqlDataSource = _appConfig.DbConnection;
+                string sqlDataSource = _appSettings.DbConnection;
                 NpgsqlDataReader myReader;
                 using (NpgsqlConnection myCon = new NpgsqlConnection(sqlDataSource))
                 {
@@ -433,28 +430,26 @@ namespace RozitekAPIConnector.Controllers
 
                         myReader.Close();
                         myCon.Close();
-
                     }
                 }
 
                 // Convert DataTable to List<TCSPodResult>
-                FreePod result = new FreePod();
+                string result = string.Empty;
                 foreach (DataRow row in table.Rows)
                 {
-                    FreePod pod = new FreePod();
-                    pod.PodCode = row["pod_code"].ToString();
-                    pod.PodCodePosition = row["map_data_code"].ToString();
-
-                    result = pod;
+                    result = row["pod_code"].ToString();
+                    break; // Only need the first row
                 }
 
                 return result;
             }
             catch (Exception e)
             {
-                throw;
+                _logger.LogError(e.Message);
+                return string.Empty; // Handle the exception gracefully by returning an appropriate value
             }
         }
+
 
         private async Task<ReturnMessage> CancelTask(string taskCode)
         {
