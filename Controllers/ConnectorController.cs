@@ -416,7 +416,7 @@ namespace RozitekAPIConnector.Controllers
                         LIMIT 1;";
 
                 DataTable table = new DataTable();
-                string sqlDataSource = _appSettings.DbConnection;
+                string sqlDataSource = _appConfig.DbConnection;
                 NpgsqlDataReader myReader;
                 using (NpgsqlConnection myCon = new NpgsqlConnection(sqlDataSource))
                 {
